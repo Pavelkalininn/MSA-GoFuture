@@ -1,0 +1,265 @@
+@startuml Container_Diagram_Full_Infrastructure
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+Person(passenger, "Пассажир", "Заказывает поездки")
+Person(driver, "Водитель", "Принимает заказы и получает выплаты")
+Person(manager, "Корпоративный менеджер", "Управляет счетами")
+Person(accountant, "Бухгалтер", "Контролирует выплаты")
+Person(dev_engineer, "Разработчик", "Разрабатывает новые функции")
+Person(sre_engineer, "SRE инженер", "Мониторит и поддерживает систему")
+
+System_Boundary(go_future_system, "GoFuture Platform") {
+    ' ### КЛИЕНТСКИЕ ПРИЛОЖЕНИЯ ###
+    Container(web_passenger, "Пассажирское приложение", "iOS/Android/Huawei", "Интерфейс для пассажиров")
+    Container(web_driver, "Водительское приложение", "iOS/Android/Huawei", "Интерфейс для водителей")
+    Container(web_portal, "Корпоративный веб-портал", "Web Application (JS/React)", "Управление заказами")
+    Container(admin_portal, "Админ-панель", "Web Application (JS/React)", "Управление выплатами")
+
+    ' ### Общий брокер для всех задач ###
+    ContainerQueue(KafkaBroker, "Брокер сообщений с разными топиками для сервисов", "Kafka", "Брокер сообщений, в том числе для фоновых задач сервисов")
+
+    ' ### GraphQL сервис ###
+    Container(GraphQL, "GraphQL сервис для объединения запросов", "JavaScript", "Формирует ответ от ендпоинтов в зависимости от запрашиваемого варианта")
+    
+    ' ### Микросервисы ###
+    Container_Boundary(Booking, "Booking service"){
+      Container(BookingBackend, "Booking Backend", "FastAPI", "Backend сервис на REST API")
+      ContainerDb(BookingDB, "Booking DB", "PostgreSQL RDS", "База данных сервиса")
+      ContainerDb(BookingCache, "In-memory кэш", "Redis", "Кэширование данных")
+      ContainerDb(DriverSearch, "Поисковый индекс", "Elasticsearch", "Геопоиск водителей")
+      Container(BookingWorker, "Воркеры фоновых задач", "Celery", "Обработка асинхронных задач")
+      Rel(BookingBackend, KafkaBroker, "Отправка задач")
+      Rel(BookingWorker, KafkaBroker, "Получает задачи из", "AMQP")
+      Rel(BookingWorker, BookingDB, "Чтение/запись данных", "ORM")
+      Rel(BookingWorker, BookingDB, "Сохраняет результаты", "ORM")
+      Rel(BookingBackend, BookingCache, "Кешировние данных")
+      Rel(BookingBackend, BookingDB, "Чтение/запись (ORM)")
+    }
+
+    Container_Boundary(Driver, "Driver service"){
+      Container(DriverBackend, "Driver Backend", "FastAPI", "Backend сервис на REST API")
+      ContainerDb(DriverDB, "Driver DB", "PostgreSQL RDS", "База данных сервиса")
+      ContainerDb(DriverCache, "In-memory кэш", "Redis", "Кэширование данных")
+      ContainerDb(DriverSearch, "Поисковый индекс", "Elasticsearch", "Геопоиск водителей")
+      Container(DriverWorker, "Воркеры фоновых задач", "Celery", "Обработка асинхронных задач")
+      Rel(DriverBackend, KafkaBroker, "Отправка задач")
+      Rel(DriverWorker, KafkaBroker, "Получает задачи из", "AMQP")
+      Rel(DriverWorker, DriverDB, "Чтение/запись данных", "ORM")
+      Rel(DriverWorker, DriverDB, "Сохраняет результаты", "ORM")
+      Rel(DriverBackend, DriverSearch, "Геопоиск водителей")
+      Rel(DriverBackend, DriverCache, "Кешировние данных")
+      Rel(DriverBackend, DriverDB, "Чтение/запись (ORM)")
+    }
+
+    Container_Boundary(Pricing, "Pricing service"){
+      Container(PricingBackend, "Pricing Backend", "FastAPI", "Backend сервис на REST API")
+      ContainerDb(PricingDB, "Pricing DB", "PostgreSQL RDS", "База данных сервиса")
+      ContainerDb(PricingCache, "In-memory кэш", "Redis", "Кэширование данных")
+      Container(PricingWorker, "Воркеры фоновых задач", "Celery", "Обработка асинхронных задач")
+      Rel(PricingBackend, KafkaBroker, "Отправка задач")
+      Rel(PricingWorker, KafkaBroker, "Получает задачи из", "AMQP")
+      Rel(PricingWorker, PricingDB, "Чтение/запись данных", "ORM")
+      Rel(PricingWorker, PricingDB, "Сохраняет результаты", "ORM")
+      Rel(PricingBackend, PricingCache, "Кешировние данных")
+      Rel(PricingBackend, PricingDB, "Чтение/запись (ORM)")
+    }
+
+    Container_Boundary(Payments, "Payments service"){
+      Container(PaymentsBackend, "Payments Backend", "FastAPI", "Backend сервис на REST API")
+      ContainerDb(PaymentsDB, "Payments DB", "PostgreSQL RDS", "База данных сервиса")
+      ContainerDb(PaymentsCache, "In-memory кэш", "Redis", "Кэширование данных")
+      Container(PaymentsWorker, "Воркеры фоновых задач", "Celery", "Обработка асинхронных задач")
+      Rel(PaymentsBackend, KafkaBroker, "Отправка задач")
+      Rel(KafkaBroker, PaymentsBackend, "Чтение топика задач")
+      Rel(PaymentsBackend, KafkaBroker, "Отправка результата по задаче")
+      Rel(PaymentsWorker, KafkaBroker, "Получает задачи из", "AMQP")
+      Rel(PaymentsWorker, PaymentsDB, "Чтение/запись данных", "ORM")
+      Rel(PaymentsWorker, PaymentsDB, "Сохраняет результаты", "ORM")
+      Rel(PaymentsBackend, PaymentsCache, "Кешировние данных")
+      Rel(PaymentsBackend, PaymentsDB, "Чтение/запись (ORM)")
+    }
+
+    Container_Boundary(Notification, "Notification service"){
+      Container(NotificationBackend, "Notification Backend", "FastAPI", "Backend сервис на REST API")
+      ContainerDb(NotificationDB, "Notification DB", "PostgreSQL RDS", "База данных сервиса")
+      ContainerDb(NotificationCache, "In-memory кэш", "Redis", "Кэширование данных")
+      Container(NotificationWorker, "Воркеры фоновых задач", "Celery", "Обработка асинхронных задач")
+      Rel(NotificationBackend, KafkaBroker, "Отправка задач")
+      Rel(KafkaBroker, NotificationBackend, "Чтение топика задач")
+      Rel(NotificationBackend, KafkaBroker, "Отправка результата по задаче")
+      Rel(NotificationWorker, KafkaBroker, "Получает задачи из", "AMQP")
+      Rel(NotificationWorker, NotificationDB, "Чтение/запись данных", "ORM")
+      Rel(NotificationWorker, NotificationDB, "Сохраняет результаты", "ORM")
+      Rel(NotificationBackend, NotificationCache, "Кешировние данных")
+      Rel(NotificationBackend, NotificationDB, "Чтение/запись (ORM)")
+    }
+
+    Container_Boundary(Geography, "Geography service"){
+      Container(GeographyBackend, "Geography Backend", "FastAPI", "Backend сервис на REST API")
+      ContainerDb(GeographyDB, "Geography DB", "PostgreSQL RDS", "База данных сервиса")
+      ContainerDb(GeographyCache, "In-memory кэш", "Redis", "Кэширование данных")
+      Container(GeographyWorker, "Воркеры фоновых задач", "Celery", "Обработка асинхронных задач")
+      Rel(GeographyBackend, KafkaBroker, "Отправка задач")
+      Rel(GeographyWorker, KafkaBroker, "Получает задачи из", "AMQP")
+      Rel(GeographyWorker, GeographyDB, "Чтение/запись данных", "ORM")
+      Rel(GeographyWorker, GeographyDB, "Сохраняет результаты", "ORM")
+      Rel(GeographyBackend, GeographyCache, "Кешировние данных")
+      Rel(GeographyBackend, GeographyDB, "Чтение/запись (ORM)")
+    }
+
+    Container_Boundary(Fraud, "Fraud service"){
+      Container(FraudBackend, "Fraud Backend", "FastAPI", "Backend сервис на REST API")
+      ContainerDb(FraudDB, "Fraud DB", "PostgreSQL RDS", "База данных сервиса")
+      ContainerDb(FraudCache, "In-memory кэш", "Redis", "Кэширование данных")
+      Container(FraudWorker, "Воркеры фоновых задач", "Celery", "Обработка асинхронных задач")
+      Rel(KafkaBroker, FraudBackend, "Чтение топика задач")
+      Rel(FraudBackend, KafkaBroker, "Отправка результата по задаче")
+      Rel(FraudWorker, KafkaBroker, "Получает задачи из", "AMQP")
+      Rel(FraudWorker, FraudDB, "Чтение/запись данных", "ORM")
+      Rel(FraudWorker, FraudDB, "Сохраняет результаты", "ORM")
+      Rel(FraudBackend, FraudCache, "Кешировние данных")
+      Rel(FraudBackend, FraudDB, "Чтение/запись (ORM)")
+    }
+
+    ' ### МОНИТОРИНГ И OBSERVABILITY ###
+    Container(monitoring, "Prometheus", "Monitoring System", "Сбор метрик и мониторинг")
+    Container(grafana, "Grafana", "Dashboard System", "Визуализация метрик и дашборды")
+    Container(loki, "Loki", "Log Aggregation", "Сбор и анализ логов")
+    Container(alert_manager, "Alertmanager", "Alert System", "Управление алертами")
+    
+    ' ### CI/CD ИНФРАСТРУКТУРА ###
+    Container(jenkins, "Jenkins", "CI/CD Server", "Сборка и деплой монолита")
+    Container(artifact_repo, "Artifact Repository", "Docker Registry", "Хранение образов приложения")
+    Container(ci_worker, "CI/CD Workers", "VM/Containers", "Выполнение задач сборки и тестов")
+    
+    ' ### АНАЛИТИЧЕСКАЯ ИНФРАСТРУКТУРА ###
+    Container(analytics_engine, "Analytics Engine", "Spark/Flink", "Обработка аналитических данных")
+    Container(analytics_db, "Analytics DB", "ClickHouse", "Хранение аналитических данных")
+    Container(datalens, "DataLens", "BI Tool", "Визуализация бизнес-метрик")
+}
+
+' ### ВНЕШНИЕ СИСТЕМЫ ###
+System_Ext(yandex_pay, "Яндекс.Пэй", "Платежный шлюз")
+System_Ext(yandex_maps, "Яндекс.Карты", "Картографический сервис")
+System_Ext(fcm, "FCM", "Push-сервис Google")
+System_Ext(apns, "APNs", "Push-сервис Apple")
+System_Ext(huawei_push, "Huawei Push Kit", "Push-сервис Huawei")
+System_Ext(bank_api, "API Банка", "Банковские выплаты")
+
+' ### СВЯЗИ ПОЛЬЗОВАТЕЛЕЙ ###
+Rel(passenger, web_passenger, "Использует")
+Rel(driver, web_driver, "Использует")
+Rel(manager, web_portal, "Использует")
+Rel(accountant, admin_portal, "Использует")
+Rel(dev_engineer, jenkins, "Запускает сборки")
+Rel(sre_engineer, grafana, "Мониторит систему")
+Rel(sre_engineer, alert_manager, "Настраивает алерты")
+
+' ### БИЗНЕС-ЛОГИКА ###
+Rel(web_passenger, BookingBackend, "HTTP/REST API")
+Rel(web_driver, DriverBackend, "HTTP/REST API")
+Rel(web_portal, GraphQL, "HTTP/REST API")
+Rel(admin_portal, GraphQL, "HTTP/REST API")
+
+
+Rel(GraphQL, FraudBackend, "HTTP/REST API")
+Rel(GraphQL, GeographyBackend, "HTTP/REST API")
+Rel(GraphQL, NotificationBackend, "HTTP/REST API")
+Rel(GraphQL, PaymentsBackend, "HTTP/REST API")
+Rel(GraphQL, PricingBackend, "HTTP/REST API")
+Rel(GraphQL, DriverBackend, "HTTP/REST API")
+Rel(GraphQL, BookingBackend, "HTTP/REST API")
+
+
+Rel(Payments, yandex_pay, "Обработка платежей")
+Rel(Geography, yandex_maps, "Запросы геоданных")
+Rel(Payments, bank_api, "Инициирование выплат")
+
+' ### ASYNC WORKERS ###
+Rel(NotificationWorker, fcm, "Отправляет уведомления", "REST API")
+Rel(NotificationWorker, apns, "Отправляет уведомления", "REST API")
+Rel(NotificationWorker, huawei_push, "Отправляет уведомления", "REST API")
+Rel(PaymentsWorker, bank_api, "Выполняет выплаты", "REST API")
+
+' ### МОНИТОРИНГ ###
+Rel(BookingBackend, monitoring, "Отправляет метрики", "Prometheus Metrics")
+Rel(DriverBackend, monitoring, "Отправляет метрики", "Prometheus Metrics")
+Rel(PricingBackend, monitoring, "Отправляет метрики", "Prometheus Metrics")
+Rel(PaymentsBackend, monitoring, "Отправляет метрики", "Prometheus Metrics")
+Rel(NotificationBackend, monitoring, "Отправляет метрики", "Prometheus Metrics")
+Rel(GeographyBackend, monitoring, "Отправляет метрики", "Prometheus Metrics")
+Rel(FraudBackend, monitoring, "Отправляет метрики", "Prometheus Metrics")
+
+Rel(FraudWorker, monitoring, "Отправляет метрики", "Prometheus Metrics")
+Rel(GeographyWorker, monitoring, "Отправляет метрики", "Prometheus Metrics")
+Rel(NotificationWorker, monitoring, "Отправляет метрики", "Prometheus Metrics")
+Rel(PaymentsWorker, monitoring, "Отправляет метрики", "Prometheus Metrics")
+Rel(PricingWorker, monitoring, "Отправляет метрики", "Prometheus Metrics")
+Rel(DriverWorker, monitoring, "Отправляет метрики", "Prometheus Metrics")
+Rel(BookingWorker, monitoring, "Отправляет метрики", "Prometheus Metrics")
+
+Rel(BookingDB, monitoring, "Метрики БД", "PostgreSQL Exporter")
+Rel(DriverDB, monitoring, "Метрики БД", "PostgreSQL Exporter")
+Rel(PricingDB, monitoring, "Метрики БД", "PostgreSQL Exporter")
+Rel(PaymentsDB, monitoring, "Метрики БД", "PostgreSQL Exporter")
+Rel(NotificationDB, monitoring, "Метрики БД", "PostgreSQL Exporter")
+Rel(GeographyDB, monitoring, "Метрики БД", "PostgreSQL Exporter")
+Rel(FraudDB, monitoring, "Метрики БД", "PostgreSQL Exporter")
+
+Rel(KafkaBroker, monitoring, "Метрики очередей", "Kafka Exporter")
+
+Rel(monitoring, grafana, "Предоставляет данные", "PromQL")
+Rel(monitoring, alert_manager, "Отправляет алерты", "Alert Rules")
+Rel(alert_manager, sre_engineer, "Отправляет уведомления", "Email/Slack/Pager")
+
+Rel(FraudBackend, loki, "Отправляет логи", "Loki Logs")
+Rel(GeographyBackend, loki, "Отправляет логи", "Loki Logs")
+Rel(NotificationBackend, loki, "Отправляет логи", "Loki Logs")
+Rel(PaymentsBackend, loki, "Отправляет логи", "Loki Logs")
+Rel(PricingBackend, loki, "Отправляет логи", "Loki Logs")
+Rel(DriverBackend, loki, "Отправляет логи", "Loki Logs")
+Rel(BookingBackend, loki, "Отправляет логи", "Loki Logs")
+
+Rel(FraudWorker, loki, "Отправляет логи", "Loki Logs")
+Rel(GeographyWorker, loki, "Отправляет логи", "Loki Logs")
+Rel(NotificationWorker, loki, "Отправляет логи", "Loki Logs")
+Rel(PaymentsWorker, loki, "Отправляет логи", "Loki Logs")
+Rel(PricingWorker, loki, "Отправляет логи", "Loki Logs")
+Rel(DriverWorker, loki, "Отправляет логи", "Loki Logs")
+Rel(BookingWorker, loki, "Отправляет логи", "Loki Logs")
+
+' ### CI/CD ###
+Rel(jenkins, ci_worker, "Запускает задачи", "SSH/API")
+Rel(ci_worker, artifact_repo, "Пушит образы", "Docker Push")
+Rel(jenkins, artifact_repo, "Деплоит образы", "Docker Pull")
+Rel(ci_worker, FraudBackend, "Запускает тесты", "Test Execution")
+Rel(ci_worker, GeographyBackend, "Запускает тесты", "Test Execution")
+Rel(ci_worker, NotificationBackend, "Запускает тесты", "Test Execution")
+Rel(ci_worker, PaymentsBackend, "Запускает тесты", "Test Execution")
+Rel(ci_worker, PricingBackend, "Запускает тесты", "Test Execution")
+Rel(ci_worker, DriverBackend, "Запускает тесты", "Test Execution")
+Rel(ci_worker, BookingBackend, "Запускает тесты", "Test Execution")
+
+' ### АНАЛИТИКА ###
+Rel(FraudBackend, analytics_engine, "Отправляет события", "AMQP")
+Rel(GeographyBackend, analytics_engine, "Отправляет события", "AMQP")
+Rel(NotificationBackend, analytics_engine, "Отправляет события", "AMQP")
+Rel(PaymentsBackend, analytics_engine, "Отправляет события", "AMQP")
+Rel(PricingBackend, analytics_engine, "Отправляет события", "AMQP")
+Rel(DriverBackend, analytics_engine, "Отправляет события", "AMQP")
+Rel(BookingBackend, analytics_engine, "Отправляет события", "AMQP")
+
+Rel(FraudWorker, analytics_engine, "Отправляет события", "AMQP")
+Rel(GeographyWorker, analytics_engine, "Отправляет события", "AMQP")
+Rel(NotificationWorker, analytics_engine, "Отправляет события", "AMQP")
+Rel(PaymentsWorker, analytics_engine, "Отправляет события", "AMQP")
+Rel(PricingWorker, analytics_engine, "Отправляет события", "AMQP")
+Rel(DriverWorker, analytics_engine, "Отправляет события", "AMQP")
+Rel(BookingWorker, analytics_engine, "Отправляет события", "AMQP")
+
+Rel(analytics_engine, analytics_db, "Записывает данные", "ETL Process")
+Rel(analytics_db,datalens, "Предоставляет данные", "SQL Queries")
+Rel(datalens, manager, "Бизнес-отчеты", "Dashboards")
+Rel(datalens, accountant, "Финансовые отчеты", "Dashboards")
+
+@enduml
