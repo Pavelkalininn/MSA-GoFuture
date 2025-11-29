@@ -1,0 +1,71 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title Мультитенантная платформа GoFuture
+
+Person(partner_admin, "Партнер-админ", "Управляет своим регионом")
+Person(partner_driver, "Водитель партнера", "Работает в одном регионе")
+Person(partner_passenger, "Пассажир партнера", "Пользуется в одном регионе")
+Person(gofuture_admin, "GoFuture админ", "Управляет всей платформой")
+
+System_Boundary(Global_Services, "Глобальные сервисы") {
+    Container(iam_service, "IAM Service", "OAuth2/OIDC", "Единая аутентификация\n<color:red>SSO + RBAC</color>")
+    Container(tenant_registry, "Tenant Registry", "PostgreSQL", "Реестр партнеров\n<color:red>Onboarding API</color>")
+    Container(global_monitoring, "Global Monitoring", "Grafana", "Агрегированные метрики\n<color:red>Multi-tenant dashboards</color>")
+}
+
+System_Boundary(Partner_A, "Партнер A: Сингапур") {
+    Container(partner_a_booking, "Booking Service", "FastAPI", "Локальные бронирования")
+    ContainerDb(partner_a_db, "Tenant DB", "PostgreSQL", "<color:red>Изолированная схема A</color>")
+    Container(partner_a_kafka, "Kafka", "Apache Kafka", "<color:red>Топики с префиксом A_</color>")
+}
+
+System_Boundary(Partner_B, "Партнер B: Бангкок") {
+    Container(partner_b_booking, "Booking Service", "FastAPI", "Локальные бронирования")
+    ContainerDb(partner_b_db, "Tenant DB", "PostgreSQL", "<color:red>Изолированная схема B</color>")
+    Container(partner_b_kafka, "Kafka", "Apache Kafka", "<color:red>Топики с префиксом B_</color>")
+}
+
+System_Boundary(Partner_C, "Партнер C: Джакарта") {
+    Container(partner_c_booking, "Booking Service", "FastAPI", "Локальные бронирования")
+    ContainerDb(partner_c_db, "Tenant DB", "PostgreSQL", "<color:red>Изолированная схема C</color>")
+    Container(partner_c_kafka, "Kafka", "Apache Kafka", "<color:red>Топики с префиксом C_</color>")
+}
+
+' Authentication & Authorization
+Rel(partner_admin, iam_service, "SSO логин", "OIDC")
+Rel(partner_driver, iam_service, "SSO логин", "OIDC")
+Rel(partner_passenger, iam_service, "SSO логин", "OIDC")
+Rel(gofuture_admin, iam_service, "Полный доступ", "OIDC")
+
+Rel(iam_service, partner_a_booking, "JWT токен с tenant_id=A", "HTTP")
+Rel(iam_service, partner_b_booking, "JWT токен с tenant_id=B", "HTTP")
+Rel(iam_service, partner_c_booking, "JWT токен с tenant_id=C", "HTTP")
+
+' Tenant isolation
+Rel(partner_a_booking, partner_a_db, "Только схема A", "JDBC")
+Rel(partner_b_booking, partner_b_db, "Только схема B", "JDBC")
+Rel(partner_c_booking, partner_c_db, "Только схема C", "JDBC")
+
+Rel(partner_a_booking, partner_a_kafka, "Топики A_*", "Kafka")
+Rel(partner_b_booking, partner_b_kafka, "Топики B_*", "Kafka")
+Rel(partner_c_booking, partner_c_kafka, "Топики C_*", "Kafka")
+
+' Monitoring
+Rel(partner_a_booking, global_monitoring, "Метрики с tenant_id", "Prometheus")
+Rel(partner_b_booking, global_monitoring, "Метрики с tenant_id", "Prometheus")
+Rel(partner_c_booking, global_monitoring, "Метрики с tenant_id", "Prometheus")
+
+' Tenant management
+Rel(gofuture_admin, tenant_registry, "Управление партнерами", "REST API")
+Rel(tenant_registry, iam_service, "Синхронизация tenant", "Webhook")
+
+note right of iam_service
+  <b>Модель изоляции:</b>
+  • Database per tenant
+  • Kafka prefix isolation
+  • JWT с tenant_id
+  • RBAC роли
+end note
+
+@enduml

@@ -1,0 +1,114 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title Пайплайн данных для ML-платформы динамического ценообразования
+
+Person(data_scientist, "Data Scientist", "Разрабатывает ML-модели")
+Person(ml_engineer, "ML Engineer", "Развертывает и мониторит модели")
+Person(business_analyst, "Business Analyst", "Анализирует метрики и тренды")
+Person(product_manager, "Product Manager", "Управляет стратегией ценообразования")
+
+System_Boundary(Data_Sources, "Источники данных GoFuture") {
+    Container(booking_svc, "Booking Service", "FastAPI", "События бронирований")
+    Container(driver_svc, "Driver Service", "FastAPI", "События водителей")
+    Container(pricing_svc, "Pricing Service", "FastAPI", "Исторические цены")
+    Container(payments_svc, "Payments Service", "FastAPI", "Данные о платежах")
+    Container(geography_svc, "Geography Service", "FastAPI", "Геоданные и маршруты")
+    Container(fraud_svc, "Fraud Service", "FastAPI", "Фрод-события")
+
+    Container(kafka, "Kafka Broker", "Apache Kafka", "Основной брокер событий\n(все микросервисы)")
+}
+
+System_Boundary(Data_Ingestion, "Сбор и обработка данных") {
+    Container(flink_streaming, "Flink Streaming", "Apache Flink", "Обработка в реальном времени\n<color:red>Обогащение событий</color>")
+    Container(spark_batch, "Spark Batch", "Apache Spark", "Пакетная обработка\n<color:red>Аггрегация фич</color>")
+
+    Container(data_validation, "Data Validation", "Great Expectations", "<color:red>Валидация качества данных</color>")
+
+    Container(feature_store, "Feature Store", "Feast/Hopsworks", "<color:red>Хранение и версионирование фич</color>")
+}
+
+System_Boundary(ML_Platform, "ML-платформа") {
+    Container(ml_training, "ML Training", "Kubeflow/Airflow", "<color:red>Обучение моделей</color>")
+    Container(model_registry, "Model Registry", "MLflow", "<color:red>Версионирование моделей</color>")
+    Container(ml_serving, "ML Serving", "KServe/Seldon", "<color:red>Обслуживание моделей</color>")
+
+    Container(demand_forecast, "Demand Forecast", "ML Model", "Прогноз спроса\n(Prophet/XGBoost)")
+    Container(dynamic_pricing, "Dynamic Pricing", "ML Model", "Динамическое ценообразование\n(Gradient Boosting)")
+    Container(fraud_detection, "Fraud Detection", "ML Model", "Обнаружение мошенничества\n(Isolation Forest)")
+}
+
+System_Boundary(BI_Analytics, "BI и аналитика") {
+    Container(analytics_db, "Analytics DB", "ClickHouse", "<color:red>Хранение аналитических данных</color>")
+    Container(datalens, "DataLens", "BI Tool", "Визуализация и отчеты")
+    Container(monitoring_dash, "Monitoring Dashboard", "Grafana", "Мониторинг ML-метрик")
+}
+
+System_Boundary(Production, "Продакшен среда") {
+    Container(pricing_api, "Pricing API", "FastAPI", "Обогащенный ML-сервис ценообразования")
+}
+
+' ### Data Flow Connections ###
+
+' Real-time streaming from services
+Rel(booking_svc, kafka, "События бронирований", "JSON")
+Rel(driver_svc, kafka, "События водителей", "JSON")
+Rel(pricing_svc, kafka, "История цен", "JSON")
+Rel(payments_svc, kafka, "Данные платежей", "JSON")
+Rel(geography_svc, kafka, "Геоданные", "JSON")
+Rel(fraud_svc, kafka, "Фрод-события", "JSON")
+
+' Data ingestion pipeline
+Rel(kafka, flink_streaming, "Поток событий", "Kafka Connect")
+Rel(flink_streaming, data_validation, "Валидация в реальном времени", "HTTP")
+Rel(data_validation, feature_store, "Валидированные фичи", "gRPC")
+Rel(data_validation, analytics_db, "Чистые данные", "JDBC")
+
+' Batch processing
+Rel(analytics_db, spark_batch, "Исторические данные", "JDBC")
+Rel(spark_batch, feature_store, "Аггрегированные фичи", "Python SDK")
+
+' ML Platform flow
+Rel(feature_store, ml_training, "Фичи для обучения", "Python SDK")
+Rel(ml_training, model_registry, "Обученные модели", "MLflow API")
+Rel(model_registry, ml_serving, "Модели для прода", "Docker")
+Rel(ml_serving, demand_forecast, "Запуск инференса", "REST")
+Rel(ml_serving, dynamic_pricing, "Запуск инференса", "REST")
+Rel(ml_serving, fraud_detection, "Запуск инференса", "REST")
+
+' Production integration
+Rel(feature_store, pricing_api, "Актуальные фичи", "Feature Store API")
+Rel(dynamic_pricing, pricing_api, "Предсказания цен", "REST")
+Rel(demand_forecast, pricing_api, "Прогноз спроса", "REST")
+Rel(pricing_api, pricing_svc, "Обогащенные цены", "gRPC")
+
+' BI and Monitoring
+Rel(analytics_db, datalens, "Данные для отчетов", "SQL")
+Rel(analytics_db, monitoring_dash, "Метрики для мониторинга", "SQL")
+Rel(ml_serving, monitoring_dash, "ML метрики", "Prometheus")
+
+' User interactions
+Rel(data_scientist, ml_training, "Экспериментирует", "Jupyter Notebook")
+Rel(ml_engineer, model_registry, "Управляет версиями", "Web UI")
+Rel(business_analyst, datalens, "Создает отчеты", "Web UI")
+Rel(product_manager, monitoring_dash, "Мониторит эффективность", "Web UI")
+
+note right of kafka
+  <b>Ключевые топики для ML:</b>
+  • booking_events
+  • driver_location_updates
+  • pricing_decisions
+  • payment_transactions
+  • fraud_alerts
+end note
+
+note right of feature_store
+  <b>Основные фичи:</b>
+  • Исторический спрос по районам
+  • Погодные условия
+  • Трафик и события в городе
+  • Динамика цен конкурентов
+  • Поведенческие паттерны
+end note
+
+@enduml
