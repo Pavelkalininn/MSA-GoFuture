@@ -1,0 +1,67 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title Схема репликации данных между регионами
+
+Container_Boundary(Region1, "Регион 1: Сингапур (Primary)") {
+    Container(sg_app, "Приложения", "Все микросервисы", "Активные")
+    ContainerDb(sg_db_booking, "Booking DB", "PostgreSQL", "Мастер")
+    ContainerDb(sg_db_driver, "Driver DB", "PostgreSQL", "Мастер")
+    ContainerDb(sg_db_pricing, "Pricing DB", "PostgreSQL", "Мастер")
+    ContainerDb(sg_db_payments, "Payments DB", "PostgreSQL", "Мастер")
+    ContainerDb(sg_search, "Search Index", "Elasticsearch", "Primary")
+    Container(sg_kafka, "Kafka Cluster", "Apache Kafka", "Основной брокер")
+}
+
+Container_Boundary(Region2, "Регион 2: Сан-Паулу (Active)") {
+    Container(sp_app, "Приложения", "Все микросервисы", "Активные")
+    ContainerDb(sp_db_booking, "Booking DB", "PostgreSQL", "Read-реплика")
+    ContainerDb(sp_db_driver, "Driver DB", "PostgreSQL", "Read-реплика")
+    ContainerDb(sp_db_pricing, "Pricing DB", "PostgreSQL", "Read-реплика")
+    ContainerDb(sp_db_payments, "Payments DB", "PostgreSQL", "Read-реплика")
+    Container(sp_kafka, "Kafka Cluster", "Apache Kafka", "Реплика")
+}
+
+Container_Boundary(Region3, "Регион 3: Сидней (Active)") {
+    Container(sy_app, "Приложения", "Все микросервисы", "Активные")
+    ContainerDb(sy_db_booking, "Booking DB", "PostgreSQL", "Read-реплика")
+    ContainerDb(sy_db_driver, "Driver DB", "PostgreSQL", "Read-реплика")
+    ContainerDb(sy_db_pricing, "Pricing DB", "PostgreSQL", "Read-реплика")
+    ContainerDb(sy_db_payments, "Payments DB", "PostgreSQL", "Read-реплика")
+    Container(sy_kafka, "Kafka Cluster", "Apache Kafka", "Реплика")
+}
+
+' Database Replication
+Rel(sg_db_booking, sp_db_booking, "Асинхронная\nрепликация", "PostgreSQL")
+Rel(sg_db_booking, sy_db_booking, "Асинхронная\nрепликация", "PostgreSQL")
+
+Rel(sg_db_driver, sp_db_driver, "Асинхронная\nрепликация", "PostgreSQL")
+Rel(sg_db_driver, sy_db_driver, "Асинхронная\nрепликация", "PostgreSQL")
+
+Rel(sg_db_pricing, sp_db_pricing, "Асинхронная\nрепликация", "PostgreSQL")
+Rel(sg_db_pricing, sy_db_pricing, "Асинхронная\nрепликация", "PostgreSQL")
+
+Rel(sg_db_payments, sp_db_payments, "Асинхронная\nрепликация", "PostgreSQL")
+Rel(sg_db_payments, sy_db_payments, "Асинхронная\nрепликация", "PostgreSQL")
+
+' Kafka Replication
+Rel(sg_kafka, sp_kafka, "Меж-региональная\nрепликация", "Kafka MirrorMaker")
+Rel(sg_kafka, sy_kafka, "Меж-региональная\nрепликация", "Kafka MirrorMaker")
+
+' App connections pattern
+Rel(sp_app, sp_db_booking, "Чтение (локальное)", "JDBC")
+Rel(sp_app, sg_db_booking, "Запись (удаленная)", "JDBC")
+
+Rel(sy_app, sy_db_booking, "Чтение (локальное)", "JDBC")
+Rel(sy_app, sg_db_booking, "Запись (удаленная)", "JDBC")
+
+note right of sg_app
+  <b>Стратегия для Kafka:</b>
+  • Локальные топики для каждого региона
+  • Меж-региональная репликация
+    критических топиков
+  • Гео-партиционирование
+    для поиска водителей
+end note
+
+@enduml
