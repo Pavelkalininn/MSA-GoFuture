@@ -1,0 +1,70 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title Диаграмма аварийного переключения (C4 Container)
+
+rectangle "Нормальная работа" as Normal {
+    Person(user, "Пользователь в ЮВА", "")
+
+    rectangle "DNS Service" as DNS_Normal {
+        Container(dns_n, "Route 53", "DNS", "Health Checks: ACTIVE")
+    }
+
+    rectangle "Регион: Сингапур" as SG_Normal {
+        Container(sg_app_n, "Микросервисы", "Все сервисы", "Активные")
+        ContainerDb(sg_db_n, "Базы данных", "PostgreSQL", "Мастер")
+        Container(sg_kafka_n, "Kafka", "Apache Kafka", "Основной")
+        Container(sg_graphql_n, "GraphQL", "API Gateway", "Активный")
+    }
+
+    rectangle "Регион: Сидней" as SY_Normal {
+        Container(sy_app_n, "Микросервисы", "Все сервисы", "Активные")
+        ContainerDb(sy_db_n, "Базы данных", "PostgreSQL", "Read-реплика")
+        Container(sy_kafka_n, "Kafka", "Apache Kafka", "Реплика")
+        Container(sy_graphql_n, "GraphQL", "API Gateway", "Активный")
+    }
+}
+
+rectangle "Сценарий отказа: Регион Сингапур недоступен" as Failover {
+    Person(user2, "Пользователь в ЮВА", "")
+
+    rectangle "DNS Service" as DNS_Failover {
+        Container(dns_f, "Route 53", "DNS", "Health Checks: <color:red>SG FAILED</color>")
+    }
+
+    rectangle "Регион: Сингапур" as SG_Failover {
+        Container(sg_app_f, "Микросервисы", "Все сервисы", "<color:red>НЕДОСТУПЕН</color>")
+        ContainerDb(sg_db_f, "Базы данных", "PostgreSQL", "<color:red>НЕДОСТУПЕН</color>")
+        Container(sg_kafka_f, "Kafka", "Apache Kafka", "<color:red>НЕДОСТУПЕН</color>")
+        Container(sg_graphql_f, "GraphQL", "API Gateway", "<color:red>НЕДОСТУПЕН</color>")
+    }
+
+    rectangle "Регион: Сидней" as SY_Failover {
+        Container(sy_app_f, "Микросервисы", "Все сервисы", "<color:red>Активный (Новый Primary)</color>")
+        ContainerDb(sy_db_f, "Базы данных", "PostgreSQL", "<color:red>Повышен до Мастера</color>")
+        Container(sy_kafka_f, "Kafka", "Apache Kafka", "<color:red>Стал основным</color>")
+        Container(sy_graphql_f, "GraphQL", "API Gateway", "<color:red>Принимает весь трафик</color>")
+    }
+}
+
+' Normal flow
+Rel(user, dns_n, "DNS-запрос", "")
+Rel(dns_n, sg_graphql_n, "Наименьшая задержка", "IP: 13.228.x.x")
+Rel(sg_graphql_n, sg_app_n, "Внутренние вызовы", "gRPC/REST")
+Rel(sg_app_n, sg_db_n, "Чтение/Запись", "JDBC")
+Rel(sg_app_n, sg_kafka_n, "Обмен сообщениями", "Kafka Protocol")
+
+' Failover flow
+Rel(user2, dns_f, "DNS-запрос", "")
+Rel(dns_f, sy_graphql_f, "<color:red>Следующий лучший регион</color>", "IP: 16.228.x.x")
+Rel(sy_graphql_f, sy_app_f, "<color:red>Внутренние вызовы</color>", "gRPC/REST")
+Rel(sy_app_f, sy_db_f, "<color:red>Чтение/Запись (локально)</color>", "JDBC")
+Rel(sy_app_f, sy_kafka_f, "<color:red>Обмен сообщениями</color>", "Kafka Protocol")
+
+' Failure indication
+Rel(sg_app_n, sg_app_f, "<color:red>ОТКАЗ РЕГИОНА</color>", "")
+
+' Connect scenarios
+Normal ..> Failover
+
+@enduml

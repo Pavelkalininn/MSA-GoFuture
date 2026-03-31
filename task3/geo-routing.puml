@@ -1,0 +1,47 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+title Схема геомаршрутизации пользователей
+
+Person(passenger, "Пассажир", "Находится в Джакарте")
+Person(driver, "Водитель", "Находится в Бангкоке")
+
+System_Boundary(DNS, "Сервис DNS") {
+    System(dns_service, "Route 53", "DNS-сервер с политикой\nмаршрутизации по задержке")
+}
+
+System_Boundary(Region1, "Регион 1: Сингапур") {
+    System(sg_app, "GoFuture Platform", "13.228.x.x\nВсе микросервисы + GraphQL")
+}
+
+System_Boundary(Region2, "Регион 2: Сан-Паулу") {
+    System(sp_app, "GoFuture Platform", "15.228.x.x\nВсе микросервисы + GraphQL")
+}
+
+System_Boundary(Region3, "Регион 3: Сидней") {
+    System(sy_app, "GoFuture Platform", "16.228.x.x\nВсе микросервисы + GraphQL")
+}
+
+System_Boundary(Region4, "Регион 4: Орегон") {
+    System(or_app, "GoFuture Platform", "52.32.x.x\nВсе микросервисы + GraphQL")
+}
+
+' Connections
+Rel(passenger, dns_service, "DNS-запрос\napi.gofuture.com", "DNS")
+Rel(driver, dns_service, "DNS-запрос\napi.gofuture.com", "DNS")
+
+Rel(dns_service, sg_app, "Наименьшая задержка\nдля ЮВА", "IP: 13.228.x.x")
+Rel(dns_service, sp_app, "Наименьшая задержка\nдля Южной Америки", "IP: 15.228.x.x")
+Rel(dns_service, sy_app, "Наименьшая задержка\nдля Австралии", "IP: 16.228.x.x")
+Rel(dns_service, or_app, "Резервное\nнаправление", "IP: 52.32.x.x")
+
+note right of dns_service
+  <b>Особенности для GoFuture:</b>
+  • Все пользователи (пассажиры, водители,
+    менеджеры) направляются в ближайший регион
+  • GraphQL API служит единой точкой входа
+  • Health Checks мониторят все микросервисы
+    и Kafka
+end note
+
+@enduml

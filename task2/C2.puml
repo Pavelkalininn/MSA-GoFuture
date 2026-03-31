@@ -1,0 +1,82 @@
+@startuml Container_Diagram_Full_Infrastructure
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+System("Booking", "Микросервис бронирования")
+System("Driver", "Микросервис водителей")
+System("Pricing", "Микросервис цен")
+System("Payments", "Микросервис оплаты")
+System("Notification", "Микросервис уведомлений")
+System("Geography", "Микросервис геопозиционирования")
+System("Fraud", "Микросервис антифрод")
+
+System_Boundary(GoFuture, "GoFuture событийная платформа") {
+  Container_Boundary(ApacheFlink, "Преобразование информации \n топиков в реальном времени Apache Flink"){
+    ContainerQueue(BookingEvents, "Топик: Booking", "Kafka", "Партиции: 5, Репликации: 3")
+    ContainerQueue(DriverEvents, "Топик: Driver", "Kafka", "Партиции: 5, Репликации: 3")
+    ContainerQueue(PricingEvents, "Топик: Pricing", "Kafka", "Партиции: 5, Репликации: 3")
+    ContainerQueue(PaymentsEvents, "Топик: Payments", "Kafka", "Партиции: 5, Репликации: 3")
+    ContainerQueue(NotificationEvents, "Топик: Notification", "Kafka", "Партиции: 5, Репликации: 3")
+    ContainerQueue(GeographyEvents, "Топик: Geography", "Kafka", "Партиции: 5, Репликации: 3")
+    ContainerQueue(FraudEvents, "Топик: Fraud", "Kafka", "Партиции: 5, Репликации: 3")
+  }
+}
+
+' ### Публикуют события ###
+Rel(Booking, BookingEvents, "Публикует действия: BookingCreated, BookingCanceled, BookingConfirmed")
+Rel(Driver, DriverEvents, "Публикует действия: DriverLocationUpdated, DriverCreated, DriverDeactivated, DriverCancelled, DriverStatusChange")
+Rel(Pricing, PricingEvents, "Публикует действия: PriceSaved, PriceChanged, PriceCancelled")
+Rel(Payments, PaymentsEvents, "Публикует действия: PaymentApproved, PaymentCancelled, PaymentCreated")
+Rel(Notification, NotificationEvents, "Публикует действия: NotificationCreated, NotificationStatusUpdated")
+Rel(Geography, GeographyEvents, "Публикует действия: GeographyCreated, GeographyChanged")
+Rel(Fraud, FraudEvents, "Публикует действия: PaymentAntifrodStatusChanged")
+
+
+
+' ### Читают события ###
+Rel(Booking, DriverEvents, "Читает события: DriverLocationUpdated, DriverCreated, DriverDeactivated, DriverCancelled, DriverStatusChange")
+Rel(Booking, PaymentsEvents, "Читает действия: PaymentApproved, PaymentCancelled, PaymentCreated")
+Rel(Booking, PricingEvents, "Читает действия: PriceSaved, PriceChanged, PriceCancelled")
+Rel(Booking, FraudEvents, "Читает события: PaymentAntifrodStatusChanged")
+
+Rel(Driver, GeographyEvents, "Читает действия: GeographyCreated, GeographyChanged")
+Rel(Driver, PaymentsEvents, "Читает действия: PaymentApproved, PaymentCancelled")
+
+Rel(Notification, DriverEvents, "Читает события: DriverLocationUpdated, DriverCreated, DriverDeactivated, DriverCancelled, DriverStatusChange")
+Rel(Notification, BookingEvents, "Публикует действия: BookingCreated, BookingCanceled, BookingConfirmed")
+
+
+
+' ### Мониторинг ###
+System(monitoring, "Стек мониторинга", "Prometheus/Grafana")
+System(alerting, "Система алертинга", "Alertmanager")
+System(tracing, "Распределенная трассировка", "Jaeger")
+
+Rel(BookingEvents, monitoring, "Метрики топиков")
+Rel(DriverEvents, monitoring, "Метрики топиков")
+Rel(PricingEvents, monitoring, "Метрики топиков")
+Rel(PaymentsEvents, monitoring, "Метрики топиков")
+Rel(NotificationEvents, monitoring, "Метрики топиков")
+Rel(GeographyEvents, monitoring, "Метрики топиков")
+Rel(FraudEvents, monitoring, "Метрики топиков")
+
+
+Rel(Booking, monitoring, "Метрики обработки", "Prometheus")
+Rel(Driver, monitoring, "Метрики обработки", "Prometheus")
+Rel(Pricing, monitoring, "Метрики обработки", "Prometheus")
+Rel(Payments, monitoring, "Метрики обработки", "Prometheus")
+Rel(Notification, monitoring, "Метрики обработки", "Prometheus")
+Rel(Geography, monitoring, "Метрики обработки", "Prometheus")
+Rel(Fraud, monitoring, "Метрики обработки", "Prometheus")
+
+Rel(Booking, tracing, "Трассировка событий", "OpenTracing")
+Rel(Driver, tracing, "Трассировка событий", "OpenTracing")
+Rel(Pricing, tracing, "Трассировка событий", "OpenTracing")
+Rel(Payments, tracing, "Трассировка событий", "OpenTracing")
+Rel(Notification, tracing, "Трассировка событий", "OpenTracing")
+Rel(Geography, tracing, "Трассировка событий", "OpenTracing")
+Rel(Fraud, tracing, "Трассировка событий", "OpenTracing")
+
+Rel(monitoring, alerting, "Алерты", "Webhook")
+
+
+@enduml
